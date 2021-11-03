@@ -70,7 +70,7 @@ df_final["nb_set_diff_s"]=df_final["nb_set"]-df_final["nb_set_sea"]
 
 df_test=df_final.loc[df_final["name"]=="Rafael Nadal"]
 
-df_final.to_csv("Date/base_tennis.csv",sep=";")
+df_final.to_csv("Data/base_tennis.csv",sep=";")
 
 
 

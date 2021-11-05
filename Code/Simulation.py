@@ -69,30 +69,49 @@ df_cluster=df_cluster.rename(columns={"name":"advers"})
 df_cluster=df_cluster[["advers","age","cluster"]]
 df_reg=df_reg.merge(df_cluster,on=["advers","age"],how="outer")
 
-
-count = df_reg.groupby('name').count().reset_index()
-count = count[['name',"tourney_id"]]
-count = count.rename(columns={"tourney_id":"count"})
-indexNames = count[ (count['count'] < 10)].index
-count.drop(indexNames , inplace=True)
-
-
-##MODELE ACE
-df_reg = pd.merge(df_reg, count, on='name')
-
-df_cluster.to_csv("Data/Cluster_tennis.csv",sep=";")
-
-df_ML=df_reg[["win","ace",'age',
+df_ML=df_reg[["tourney_id","win","ace",'age',
         'ht',
         'name',
         'surface',
         'tourney_level',
         'classe',
         'minutes',
-        "cluster"]]
+        "cluster",
+        "advers"]]
+df_ML=df_ML.dropna()
+
+count = df_ML.groupby(['name',"advers"]).count().reset_index()
+count = count[['name',"advers","tourney_id"]]
+count = count.rename(columns={"tourney_id":"count"})
+indexNames = count[ (count['count'] < 7.5)].index
+count.drop(indexNames , inplace=True)
+
+df_ML = pd.merge(df_ML, count, on=['name'])
+
+##MODELE ACE
+df_reg = pd.merge(df_reg, count, on=['name',"advers"])
+
+df_cluster.to_csv("Data/Cluster_tennis.csv",sep=";")
+
+df_ML=df_reg[["win","ace",'age',"nb_set",
+        'ht',
+        'name',
+        'surface',
+        'tourney_level',
+        'classe',
+        'minutes',
+        "cluster",
+        "tourney_id","advers"]]
+
+count = df_ML.groupby('name').count().reset_index()
+count = count[['name',"tourney_id"]]
+count = count.rename(columns={"tourney_id":"count"})
+indexNames = count[ (count['count'] < 7.5)].index
+count.drop(indexNames , inplace=True)
 
 df_ML=df_ML.dropna()
 
+df_ML=pd.read_csv("tennis_atp-master/base_atp_win.csv",sep=";")
 y = df_ML[['ace']]
 
 #min_max_scaler = MinMaxScaler()
@@ -105,9 +124,8 @@ X = df_ML[['age',
         'name',
         'surface',
         'tourney_level',
-        'classe',
         'minutes',
-        "cluster"
+        "advers"
         ]]
 
 numeric_data = ['age',
@@ -117,13 +135,12 @@ numeric_data = ['age',
 object_data = ['name',
                'surface',
                'tourney_level',
-               'classe',
-               "cluster"
+               'advers'
                ]
 
 #PIPELINE
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=2)
 
 numeric_pipeline = make_pipeline(PolynomialFeatures(2),StandardScaler())
 object_pipeline = make_pipeline(OneHotEncoder())
@@ -161,7 +178,7 @@ dump(RFR,"predi_ace")
 
 df_ML=df_ML.dropna()
 
-y = df_ML[['win']]
+y = df_ML[['nb_set']]
 
 #min_max_scaler = MinMaxScaler()
 #y_scaled = min_max_scaler.fit_transform(y)
@@ -172,10 +189,8 @@ X = df_ML[['age',
         'ht',
         'name',
         'surface',
-        'tourney_level',
-        'classe',
         'minutes',
-        "cluster"
+        "advers"
         ]]
 
 numeric_data = ['age',
@@ -184,14 +199,12 @@ numeric_data = ['age',
                 ]
 object_data = ['name',
                'surface',
-               'tourney_level',
-               'classe',
-               "cluster"
+               "advers"
                ]
 
 #PIPELINE
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=2)
 
 numeric_pipeline = make_pipeline(PolynomialFeatures(2),StandardScaler())
 object_pipeline = make_pipeline(OneHotEncoder())
@@ -213,3 +226,56 @@ RFR.score(X,y)
 
 dump(RFR,"predi_win")
 
+from sklearn.neural_network import MLPRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, RidgeCV, SGDRegressor
+from sklearn.neighbors import KNeighborsRegressor
+
+Lin_Reg = make_pipeline(preprocessor, LinearRegression())
+MLP = make_pipeline(preprocessor, MLPRegressor(solver="lbfgs",learning_rate="constant",
+                                               hidden_layer_sizes=(10,),alpha=0.001,
+                                               activation="tanh"))
+RFR = make_pipeline(preprocessor, RandomForestRegressor(n_estimators=20))
+KNN = make_pipeline(preprocessor, KNeighborsRegressor(n_neighbors=4,
+                                                      leaf_size=15,
+                                                      n_jobs=2))
+Ridge = make_pipeline(preprocessor,RidgeCV())
+SGD = make_pipeline(preprocessor, SGDRegressor())
+evaluation(SGD)
+
+dict_of_models = {'Linéaire': Lin_Reg,
+                  "Neural": MLP,
+                  "Ridge": Ridge,
+                  "SGD" : SGD,
+                  "KNN":KNN,
+                  "RFR":RFR,
+                 }
+
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+def evaluation (model):
+    model.fit(X_train, y_train.values.ravel())
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test.values.ravel(), y_pred)
+    print(mse)
+    print(mae)
+    print (model.score(X_test, y_test))
+    
+for name, model in dict_of_models.items():
+    print(name)
+    evaluation(model)  
+
+hyper_params = {'mlpregressor__hidden_layer_sizes': [(20,),(10,),(1,)],
+                'mlpregressor__activation': ["identity", "logistic", "tanh", "relu"],
+                'mlpregressor__solver': ["lbfgs", "sgd",'adam'],
+                'mlpregressor__alpha': [0.0001,0.001,0.01],
+                'mlpregressor__learning_rate': ["constant", "invscaling", 'adaptive'],
+                }
+
+grid = RandomizedSearchCV(MLP, hyper_params, cv=5,
+                          n_iter=4)
+
+evaluation(grid)
+
+print(grid.best_params_)
